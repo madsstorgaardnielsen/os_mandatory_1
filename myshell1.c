@@ -22,7 +22,7 @@
 
 void prompt();
 int getArgs(char *input, char *args[]);
-int getInput(char *args[]);
+int getInputCommands(char *args[]);
 void handleCd();
 void executeInput(char *args[]);
 
@@ -33,19 +33,54 @@ while (1){
 	prompt();
 	
 	char *pipeArgs[100];
-	getInput(pipeArgs);
 	
-	//Go through each pipie-arg
-	int length = sizeof(pipeArgs)/sizeof(pipeArgs[0]);
+	
+	//Go through each pipe-arg
+	int length = getInputCommands(pipeArgs);
 	for (int i = 0; i < length;i++){
 		char *currentCommand = pipeArgs[i];
-		printf("%s\n",currentCommand);
-	
 		//Get args 
 		char *args[100];
 		getArgs(currentCommand,args);	
+
+		
+		int pipefd[2];
+		pipe(pipefd);
+
+
 		//Execute input
-		executeInput(args);
+		int childPid = fork();
+		int isChild = childPid == 0;
+		if (isChild){
+			
+			close(pipefd[0]);
+			dup2(pipefd[1],STDOUT_FILENO);
+			close(pipefd[1]);
+
+			int isCd = strcmp("cd",args[0]) == 0;
+			if (isCd){
+				handleCd();
+				return 0;
+			}
+		
+			execvp(args[0],args);
+			int status = execvp(args[0], args); 
+			if (status <0){
+				perror(args[0]);
+			} 
+			return 0 ;
+		} else {
+			
+			close(pipefd[1]);
+            dup2(pipefd[0], STDIN_FILENO);
+            close(pipefd[0]);
+			
+		}
+		
+		int status;
+		wait(&status);
+
+
 	}
 
 }	
@@ -57,7 +92,7 @@ return 0;
 }
 
 
-int getInput(char *args[]){
+int getInputCommands(char *args[]){
     //Get the command with getline()
     char *line = NULL;//The chars of the line
     size_t len =0;//buffer length
@@ -74,7 +109,7 @@ int getInput(char *args[]){
     	p = strtok(NULL,delimit);
 	    args[i++] = p;
     }
-    return 1;
+    return i-1;
 }
 
 
