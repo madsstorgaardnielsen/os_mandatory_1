@@ -24,7 +24,7 @@ void prompt();
 int getArgs(char *input, char *args[]);
 int getInputCommands(char *args[]);
 void handleCd();
-void executeInput(char *args[]);
+int executeInput(char *args[], int inputFd);
 
 
 int main(){
@@ -34,7 +34,8 @@ while (1){
 	
 	char *pipeArgs[100];
 	
-	
+	int inputFd = STDIN_FILENO;
+	 
 	//Go through each pipe-arg
 	int length = getInputCommands(pipeArgs);
 	for (int i = 0; i < length;i++){
@@ -43,50 +44,13 @@ while (1){
 		char *args[100];
 		getArgs(currentCommand,args);	
 
-		
-		int pipefd[2];
-		pipe(pipefd);
-
-
 		//Execute input
-		int childPid = fork();
-		int isChild = childPid == 0;
-		if (isChild){
-			
-			close(pipefd[0]);
-			dup2(pipefd[1],STDOUT_FILENO);
-			close(pipefd[1]);
-
-			int isCd = strcmp("cd",args[0]) == 0;
-			if (isCd){
-				handleCd();
-				return 0;
-			}
-		
-			execvp(args[0],args);
-			int status = execvp(args[0], args); 
-			if (status <0){
-				perror(args[0]);
-			} 
-			return 0 ;
-		} else {
-			
-			close(pipefd[1]);
-            dup2(pipefd[0], STDIN_FILENO);
-            close(pipefd[0]);
-			
-		}
-		
+		inputFd = executeInput(args,inputFd);
 		int status;
 		wait(&status);
-
-
 	}
 
 }	
-	
-	
-	
 	
 return 0;	
 }
@@ -138,7 +102,11 @@ void prompt(){
 
 }
 
-void executeInput(char *args[]){
+int executeInput(char *args[], int inputFd){
+	int pipefd[2];
+	pipe(pipefd);
+	dup2(inputFd,pipefd[0]);
+
 	int childPid = fork();
 	int isChild = childPid == 0;
 	if (isChild){
