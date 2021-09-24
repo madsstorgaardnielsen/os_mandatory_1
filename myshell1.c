@@ -23,15 +23,14 @@
 void prompt();
 int getArgs(char *input, char *args[]);
 int getInputCommands(char *args[]);
-void handleCd();
 int executeInput(char *args[], int inputFd);
+static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length);
 
 
 int main()
 {
 while (1)
 {
-
 	prompt();
 	
 	char *pipeArgs[100];
@@ -39,46 +38,7 @@ while (1)
 	//Go through each pipe-arg
 	int length = getInputCommands(pipeArgs);
 
-	for (int i = 0; i < length;i++)
-	{
-		int isFirst = i ==0;
-		int isLast = i == length-1;
-		char *currentCommand = pipeArgs[i];
-		//Get args 
-		char *args[100];
-		getArgs(currentCommand,args);	
-
-		//Execute input
-		int pipefd[2];
-		pipe(pipefd);
-
-		int pipefd2[2];
-		pipe(pipefd2); 
-
-		pid_t pid = fork();
-		int isChild = pid == 0;
-		
-		if (isChild){
-			if (!isLast){
-				close(pipefd[0]);
-				dup2(pipefd[1], STDOUT_FILENO);
-				close(pipefd[1]);
-			}
-
-			if (!isFirst){
-				close(pipefd[1]);
-				dup2(pipefd[0], STDIN_FILENO);
-				close(pipefd[0]);
-			}
-
-			int status = execvp(args[0], args); 
-			if (status <0){
-				perror(args[0]);
-			} 
-			return 0;
-		}
-		wait(NULL);
-	}
+	exec_pipeline(pipeArgs,0,STDIN_FILENO,length);
 }	
 	
 return 0;	
@@ -131,82 +91,43 @@ void prompt(){
 
 }
 
-
-int executeInput(char *args[], int inputFd){
-	int pipefd[2];
-	pipe(pipefd);
-	dup2(inputFd,pipefd[0]);
-
-	int childPid = fork();
-	int isChild = childPid == 0;
-	if (isChild){
-		int isCd = strcmp("cd",args[0]) == 0;
-		if (isCd){
-			handleCd();
-			return;
-		}
-	
-		execvp(args[0],args);
-		int status = execvp(args[0], args); 
-		if (status <0){
-		    perror(args[0]);
-		} 
-		return;
-	} 
-	int status;
-	wait(&status);
-
-
+/** move oldfd to newfd */
+static void redirect(int oldfd, int newfd) {
+	dup2(oldfd, newfd);
+	close(oldfd);
 }
 
-
-void handleCd(){
-
-}
-/*
-
-else if (length==2)
-	{
-		
-		int pipefd[2];
-		pipe(pipefd);
-
-		pid_t p1, p2;
-		p1 = fork();
-		int isChild = p1 == 0;
-		if (isChild){
-
-			close(pipefd[0]);
-			dup2(pipefd[1], STDOUT_FILENO);
-			close(pipefd[1]);
-
-			char *x[] = {"ls", NULL};
-			int status = execvp("ls", x); 
-			if (status <0){
-				perror(pipeArgs[0][0]);
-			} 
-			return;
-		} else {
-			p2 = fork();
-
-			// Child 2 executing..
-			// It only needs to read at the read end
-			if (p2 == 0) {
-				close(pipefd[1]);
-				dup2(pipefd[0], STDIN_FILENO);
-				close(pipefd[0]);
-				char *x[] = {"grep", "s", NULL};
-				if (execvp("grep", x) < 0) {
-					printf("\nCould not execute command 2..");
-					exit(0);
-				}
-			} 
-		} 
-
-		//parent executing, waiting for two children
-		wait(NULL);
-		wait(NULL);
-
-
-	}
+/** execute `cmds[pos]` command and call itself for the rest of the commands.
+    `cmds[]` is NULL-terminate array
+    `exec_pipeline()` never returns.
 */
+static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length) {
+
+	int isLast = pos == length-1;
+
+	char *currentCommand = cmds[pos];		
+	char *args[100];
+	getArgs(currentCommand,args);	
+
+	if (isLast) { 
+		redirect(in_fd, STDIN_FILENO); /* read from in_fd, write to STDOUT */
+		execvp(args[0],args);
+	}
+	else { /* $ <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
+		int fd[2]; /* output pipe */
+		pipe(fd);
+		switch(fork()) {
+		case 0: /* child: execute current command `cmds[pos]` */
+			close(fd[0]); /* unused */
+			redirect(in_fd, STDIN_FILENO);  /* read from in_fd */
+			redirect(fd[1], STDOUT_FILENO); /* write to fd[1] */
+			execvp(args[0], args);
+		default: /* parent: execute the rest of the commands */
+			close(fd[1]); /* unused */
+			close(in_fd); /* unused */
+			wait(NULL);
+			exec_pipeline(cmds, pos + 1, fd[0],length); /* execute the rest */
+		}
+	}
+}
+
