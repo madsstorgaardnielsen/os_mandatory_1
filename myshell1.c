@@ -27,29 +27,58 @@ void handleCd();
 int executeInput(char *args[], int inputFd);
 
 
-int main(){
-while (1){
+int main()
+{
+while (1)
+{
 
 	prompt();
 	
 	char *pipeArgs[100];
 	
-	int inputFd = STDIN_FILENO;
-	 
 	//Go through each pipe-arg
 	int length = getInputCommands(pipeArgs);
-	for (int i = 0; i < length;i++){
+
+	for (int i = 0; i < length;i++)
+	{
+		int isFirst = i ==0;
+		int isLast = i == length-1;
 		char *currentCommand = pipeArgs[i];
 		//Get args 
 		char *args[100];
 		getArgs(currentCommand,args);	
 
 		//Execute input
-		inputFd = executeInput(args,inputFd);
-		int status;
-		wait(&status);
-	}
+		int pipefd[2];
+		pipe(pipefd);
 
+		int pipefd2[2];
+		pipe(pipefd2); 
+
+		pid_t pid = fork();
+		int isChild = pid == 0;
+		
+		if (isChild){
+			if (!isLast){
+				close(pipefd[0]);
+				dup2(pipefd[1], STDOUT_FILENO);
+				close(pipefd[1]);
+			}
+
+			if (!isFirst){
+				close(pipefd[1]);
+				dup2(pipefd[0], STDIN_FILENO);
+				close(pipefd[0]);
+			}
+
+			int status = execvp(args[0], args); 
+			if (status <0){
+				perror(args[0]);
+			} 
+			return 0;
+		}
+		wait(NULL);
+	}
 }	
 	
 return 0;	
@@ -102,6 +131,7 @@ void prompt(){
 
 }
 
+
 int executeInput(char *args[], int inputFd){
 	int pipefd[2];
 	pipe(pipefd);
@@ -133,3 +163,50 @@ int executeInput(char *args[], int inputFd){
 void handleCd(){
 
 }
+/*
+
+else if (length==2)
+	{
+		
+		int pipefd[2];
+		pipe(pipefd);
+
+		pid_t p1, p2;
+		p1 = fork();
+		int isChild = p1 == 0;
+		if (isChild){
+
+			close(pipefd[0]);
+			dup2(pipefd[1], STDOUT_FILENO);
+			close(pipefd[1]);
+
+			char *x[] = {"ls", NULL};
+			int status = execvp("ls", x); 
+			if (status <0){
+				perror(pipeArgs[0][0]);
+			} 
+			return;
+		} else {
+			p2 = fork();
+
+			// Child 2 executing..
+			// It only needs to read at the read end
+			if (p2 == 0) {
+				close(pipefd[1]);
+				dup2(pipefd[0], STDIN_FILENO);
+				close(pipefd[0]);
+				char *x[] = {"grep", "s", NULL};
+				if (execvp("grep", x) < 0) {
+					printf("\nCould not execute command 2..");
+					exit(0);
+				}
+			} 
+		} 
+
+		//parent executing, waiting for two children
+		wait(NULL);
+		wait(NULL);
+
+
+	}
+*/
