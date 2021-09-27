@@ -24,6 +24,7 @@ void prompt();
 int getArgs(char *input, char *args[]);
 int getInputCommands(char *args[]);
 static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length);
+int counter = 0;
 
 
 void executeInput(char *args[]){
@@ -50,11 +51,16 @@ while (1)
 	fflush(stdin);
 	
 	char *pipeArgs[100];
+
+
 	
 	//Go through each pipe-arg
 	int length = getInputCommands(pipeArgs);
 
-	if (length > 0){
+	printf("%d\n",length);
+	//printf("%d\n",counter);
+
+	if (length >= 0){
 		exec_pipeline(pipeArgs,0,STDIN_FILENO,length);
 	}
 
@@ -123,7 +129,8 @@ static void redirect(int oldfd, int newfd) {
     `exec_pipeline()` never returns.
 */
 static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length) {
-
+	if (counter == 10){exit(0);};
+counter ++;
 	int isLast = pos == length-1;
 
 	char *currentCommand = cmds[pos];		
