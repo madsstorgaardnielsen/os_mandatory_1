@@ -10,6 +10,43 @@ static char lineInput[1024];
 
 static char *args1[512];
 static char *args2[512];
+int getInputCommands(char *args[]){
+    //Get the command with getline()
+    char *line = NULL;//The chars of the line
+    size_t len =0;//buffer length
+    getline(&line,&len,stdin);//Reads from stdin
+
+        //Get the rest of the tokens into array args  
+    char delimit[] = {'|'};
+    args[0] = strtok(line,delimit);
+    char *p =args[0];
+    int i = 1;
+
+    //Get the rest of the args - last element will be NULL
+    while (p != NULL){
+    	p = strtok(NULL,delimit);
+	    args[i++] = p;
+    }
+    return i-1;
+}
+
+
+
+int getArgs(char *input, char *args[]){
+    //Get the rest of the tokens into array args  
+    char delimit[] = {' ','\n'};
+    args[0] = strtok(input,delimit);
+    char *p =args[0];
+    int i = 1;
+
+    //Get the rest of the args - last element will be NULL
+    while (p != NULL){
+    	p = strtok(NULL,delimit);
+	    args[i++] = p;
+    }
+    return 1;
+}
+
 
 int main(int argc, char *argv[]) {
   while (1) {
@@ -26,15 +63,11 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    char delimiter[] = "|";
-    char *command = strtok(lineInput, delimiter);
-    int index1 = 0;
-    args1[index1] = command;
-
     if (args1[0] != NULL && strcmp(args1[0], "exit") == 0) {
       exit(0);
     }
 
-    printf("%s\n",  args1[index1]);
+
   }
 }
+
