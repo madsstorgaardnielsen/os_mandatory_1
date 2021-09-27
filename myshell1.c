@@ -25,6 +25,7 @@ int getArgs(char *input, char *args[]);
 int getInputCommands(char *args[]);
 static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length);
 
+
 void executeInput(char *args[]){
 	int childPid = fork();
 	int isChild = childPid == 0;
@@ -34,12 +35,11 @@ void executeInput(char *args[]){
 		if (status <0){
 		    perror(args[0]);
 		} 
-		return;
+		exit(0);
 	} 
 	int status;
 	wait(&status);
 }
-
 
 
 int main()
@@ -47,13 +47,17 @@ int main()
 while (1)
 {
 	prompt();
+	fflush(stdin);
 	
 	char *pipeArgs[100];
 	
 	//Go through each pipe-arg
 	int length = getInputCommands(pipeArgs);
 
-	exec_pipeline(pipeArgs,0,STDIN_FILENO,length);
+	if (length > 0){
+		exec_pipeline(pipeArgs,0,STDIN_FILENO,length);
+	}
+
 }	
 	
 return 0;	
@@ -127,12 +131,19 @@ static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length) {
 	getArgs(currentCommand,args);	
 
 	if (isLast) { 
-		redirect(in_fd, STDIN_FILENO); /* read from in_fd, write to STDOUT */
-		executeInput(args);
+		if (fork()==0){
+			redirect(in_fd, STDIN_FILENO); /* read from in_fd, write to STDOUT */
+			executeInput(args);
+			exit(0);
+		} else {
+			wait(NULL);
+		}
 	}
 	else { /* $ <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
 		int fd[2]; /* output pipe */
-		pipe(fd);
+		if (pipe(fd)<0){
+			printf("ERROR");
+		};
 		switch(fork()) {
 		case 0: /* child: execute current command `cmds[pos]` */
 			close(fd[0]); /* unused */
