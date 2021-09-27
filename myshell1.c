@@ -9,11 +9,12 @@ static char userInput[1024];
 
 static char *arg1[512];
 static char *arg2[512];
-void executeCommand(pid_t pid, int pipefileDesc[2], int pipeExist);
+void executeCommand(pid_t pid, int pipefileDesc[2], int isPipe);
+void getDir();
 
 int main(int argc, char *argv[]) {
   while (1) {
-    printf("$ ");
+    getDir();
     pid_t pid;
     int pipefileDesc[2];
 
@@ -30,7 +31,6 @@ int main(int argc, char *argv[]) {
 
     while (command != NULL) {
       command = strtok(NULL, delimit);
-
       argIndex1++;
       arg1[argIndex1] = command;
     }
@@ -42,48 +42,51 @@ int main(int argc, char *argv[]) {
     arg1[argIndex1] = NULL;
 
     int argIndex2 = 0;
-    int pipeExist = 0;
+    int isPipe = 0;
     int x = 0;
     for (; argIndex2 < argIndex1; argIndex2++) {
-      if (pipeExist)
-
-      {
+      if (isPipe){
         arg2[x] = arg1[argIndex2];
         x++;
       }
-      if (strcmp(arg1[argIndex2], "|") == 0)
-
-      {
+      if (strcmp(arg1[argIndex2], "|") == 0){
         arg1[argIndex2] = NULL;
-        pipeExist = 1;
+        isPipe = 1;
       }
     }
 
     pid = fork();
 
-    executeCommand(pid, pipefileDesc, pipeExist);
+    executeCommand(pid, pipefileDesc, isPipe);
   }
 }
 
-void executeCommand(pid_t pid, int pipefileDesc[2], int pipeExist) {
+void getDir(){
+  char dir[FILENAME_MAX];
+    getcwd(dir, sizeof(dir));  // gets cwd into dir
+    printf("%s: ", dir);       // Prints cwd
+    fflush(stdout);
+}
+
+void executeCommand(pid_t pid, int pipefileDesc[2], int isPipe) {
   if (pid < 0) {
     perror("fork");
     exit(1);
   } else if (pid == 0) {
-    if (pipeExist) {
+    if (isPipe) {
       dup2(pipefileDesc[1], STDOUT_FILENO);
       close(pipefileDesc[0]);
     }
     execvp(arg1[0], arg1);
 
-    printf("execvp has not been executed, so this statement is reached. \n");
+    printf("execvp has not been executed\n");
   } else {
-    if (!pipeExist) {
+    if (!isPipe) {
       usleep(10000);
       pid = wait(NULL);
     }
 
-    if (pipeExist) {
+    if (isPipe) {
       pid = fork();
       if (pid == 0) {
         dup2(pipefileDesc[0], STDIN_FILENO);
