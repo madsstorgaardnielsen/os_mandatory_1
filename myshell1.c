@@ -10,7 +10,6 @@ int lsh_help(char **args);
 int lsh_exit(char **args);
 char input[1000];
 
-
 char *builtin_str[] = {"cd", "help", "exit"};
 
 int (*builtin_func[])(char **) = {&lsh_cd, &lsh_help, &lsh_exit};
@@ -85,6 +84,26 @@ int lsh_execute(char *args) {
   return lsh_launch(args);
 }
 
+int parseInput(char *args[]) {
+  // Get the command with getline()
+  char *line = NULL;            // The chars of the line
+  size_t len = 0;               // buffer length
+  getline(&line, &len, stdin);  // Reads from stdin
+
+  // Get the rest of the tokens into array args
+  char delimit[] = {'|'};
+  args[0] = strtok(line, delimit);
+  char *p = args[0];
+  int i = 1;
+
+  // Get the rest of the args - last element will be NULL
+  while (p != NULL) {
+    p = strtok(NULL, delimit);
+    args[i++] = p;
+  }
+  return i - 1;
+}
+
 void lsh_loop(void) {
   char *line;
   char **args;
@@ -96,10 +115,11 @@ void lsh_loop(void) {
     printf("%s: ", dir);       // Prints cwd
     fflush(stdout);
 
+    fgets(input, 1000, stdin);
 
-  fgets(input,1000,stdin);
+    int t = parseInput(input);
 
-  printf("%s",input);
+    printf("%s", t);
 
   } while (status);
 }
