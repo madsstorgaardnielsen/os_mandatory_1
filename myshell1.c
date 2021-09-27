@@ -1,212 +1,198 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <ctype.h>
 
-//Extra functionality that is nice to have:
-//Break instantly on empty line
-//Cd + case sensitivity
+int lsh_cd(char **args);
+int lsh_help(char **args);
+int lsh_exit(char **args);
 
-//NEED to have:
-//USe PATH variables
-//Pipe
+char *builtin_str[] = {"cd", "help", "exit"};
 
-//TODO
-//1) Lav Git repo
-//Lav Pipe funktionalitet
-//Brug PATH variables
-//finjuster og går koden læselig + kommenter resourser osv.
+int (*builtin_func[])(char **) = {&lsh_cd, &lsh_help, &lsh_exit};
 
-void prompt();
-int getArgs(char *input, char *args[]);
-int getInputCommands(char *args[]);
-void handleCd();
-int executeInput(char *args[], int inputFd);
+int lsh_num_builtins() { return sizeof(builtin_str) / sizeof(char *); }
 
-
-int main()
-{
-while (1)
-{
-
-	prompt();
-	
-	char *pipeArgs[100];
-	
-	//Go through each pipe-arg
-	int length = getInputCommands(pipeArgs);
-
-	for (int i = 0; i < length;i++)
-	{
-		int isFirst = i ==0;
-		int isLast = i == length-1;
-		char *currentCommand = pipeArgs[i];
-		//Get args 
-		char *args[100];
-		getArgs(currentCommand,args);	
-
-		//Execute input
-		int pipefd[2];
-		pipe(pipefd);
-
-		int pipefd2[2];
-		pipe(pipefd2); 
-
-		pid_t pid = fork();
-		int isChild = pid == 0;
-		
-		if (isChild){
-			if (!isLast){
-				close(pipefd[0]);
-				dup2(pipefd[1], STDOUT_FILENO);
-				close(pipefd[1]);
-			}
-
-			if (!isFirst){
-				close(pipefd[1]);
-				dup2(pipefd[0], STDIN_FILENO);
-				close(pipefd[0]);
-			}
-
-			int status = execvp(args[0], args); 
-			if (status <0){
-				perror(args[0]);
-			} 
-			return 0;
-		}
-		wait(NULL);
-	}
-}	
-	
-return 0;	
+int lsh_cd(char **args) {
+  if (args[1] == NULL) {
+    fprintf(stderr, "lsh: expected argument to \"cd\"\n");
+  } else {
+    if (chdir(args[1]) != 0) {
+      perror("lsh");
+    }
+  }
+  return 1;
 }
 
+int lsh_help(char **args) {
+  int i;
+  printf("Stephen Brennan's LSH\n");
+  printf("Type program names and arguments, and hit enter.\n");
+  printf("The following are built in:\n");
 
-int getInputCommands(char *args[]){
-    //Get the command with getline()
-    char *line = NULL;//The chars of the line
-    size_t len =0;//buffer length
-    getline(&line,&len,stdin);//Reads from stdin
+  for (i = 0; i < lsh_num_builtins(); i++) {
+    printf("  %s\n", builtin_str[i]);
+  }
 
-        //Get the rest of the tokens into array args  
-    char delimit[] = {'|'};
-    args[0] = strtok(line,delimit);
-    char *p =args[0];
-    int i = 1;
-
-    //Get the rest of the args - last element will be NULL
-    while (p != NULL){
-    	p = strtok(NULL,delimit);
-	    args[i++] = p;
-    }
-    return i-1;
+  printf("Use the man command for information on other programs.\n");
+  return 1;
 }
 
+int lsh_exit(char **args) { return 0; }
 
+int lsh_launch(char **args) {
+  pid_t pid;
+  int status;
 
-int getArgs(char *input, char *args[]){
-    //Get the rest of the tokens into array args  
-    char delimit[] = {' ','\n'};
-    args[0] = strtok(input,delimit);
-    char *p =args[0];
-    int i = 1;
-
-    //Get the rest of the args - last element will be NULL
-    while (p != NULL){
-    	p = strtok(NULL,delimit);
-	    args[i++] = p;
+  pid = fork();
+  if (pid == 0) {
+    // Child process
+    if (execvp(args[0], args) == -1) {
+      perror("lsh");
     }
+    exit(EXIT_FAILURE);
+  } else if (pid < 0) {
+    // Error forking
+    perror("lsh");
+  } else {
+    // Parent process
+    do {
+      waitpid(pid, &status, WUNTRACED);
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+  }
+
+  return 1;
+}
+
+int lsh_execute(char **args) {
+  int i;
+
+  if (args[0] == NULL) {
+    // An empty command was entered.
     return 1;
+  }
+
+  for (i = 0; i < lsh_num_builtins(); i++) {
+    if (strcmp(args[0], builtin_str[i]) == 0) {
+      return (*builtin_func[i])(args);
+    }
+  }
+
+  return lsh_launch(args);
 }
 
+char *lsh_read_line(void) {
+#ifdef LSH_USE_STD_GETLINE
+  char *line = NULL;
+  ssize_t bufsize = 0;  // have getline allocate a buffer for us
+  if (getline(&line, &bufsize, stdin) == -1) {
+    if (feof(stdin)) {
+      exit(EXIT_SUCCESS);  // We received an EOF
+    } else {
+      perror("lsh: getline\n");
+      exit(EXIT_FAILURE);
+    }
+  }
+  return line;
+#else
+#define LSH_RL_BUFSIZE 1024
+  int bufsize = LSH_RL_BUFSIZE;
+  int position = 0;
+  char *buffer = malloc(sizeof(char) * bufsize);
+  int c;
 
-void prompt(){
-	char dir[FILENAME_MAX];
-    	getcwd(dir,sizeof(dir));//gets cwd into dir
-    	printf("%s: ",dir);//Prints cwd
-    	fflush(stdout);
+  if (!buffer) {
+    fprintf(stderr, "lsh: allocation error\n");
+    exit(EXIT_FAILURE);
+  }
 
+  while (1) {
+    // Read a character
+    c = getchar();
+
+    if (c == EOF) {
+      exit(EXIT_SUCCESS);
+    } else if (c == '\n') {
+      buffer[position] = '\0';
+      return buffer;
+    } else {
+      buffer[position] = c;
+    }
+    position++;
+
+    // If we have exceeded the buffer, reallocate.
+    if (position >= bufsize) {
+      bufsize += LSH_RL_BUFSIZE;
+      buffer = realloc(buffer, bufsize);
+      if (!buffer) {
+        fprintf(stderr, "lsh: allocation error\n");
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+#endif
 }
 
+#define LSH_TOK_BUFSIZE 64
+#define LSH_TOK_DELIM " \t\r\n\a"
+/**
+   @brief Split a line into tokens (very naively).
+   @param line The line.
+   @return Null-terminated array of tokens.
+ */
+char **lsh_split_line(char *line) {
+  int bufsize = LSH_TOK_BUFSIZE, position = 0;
+  char **tokens = malloc(bufsize * sizeof(char *));
+  char *token, **tokens_backup;
 
-int executeInput(char *args[], int inputFd){
-	int pipefd[2];
-	pipe(pipefd);
-	dup2(inputFd,pipefd[0]);
+  if (!tokens) {
+    fprintf(stderr, "lsh: allocation error\n");
+    exit(EXIT_FAILURE);
+  }
 
-	int childPid = fork();
-	int isChild = childPid == 0;
-	if (isChild){
-		int isCd = strcmp("cd",args[0]) == 0;
-		if (isCd){
-			handleCd();
-			return;
-		}
-	
-		execvp(args[0],args);
-		int status = execvp(args[0], args); 
-		if (status <0){
-		    perror(args[0]);
-		} 
-		return;
-	} 
-	int status;
-	wait(&status);
+  token = strtok(line, LSH_TOK_DELIM);
+  while (token != NULL) {
+    tokens[position] = token;
+    position++;
 
+    if (position >= bufsize) {
+      bufsize += LSH_TOK_BUFSIZE;
+      tokens_backup = tokens;
+      tokens = realloc(tokens, bufsize * sizeof(char *));
+      if (!tokens) {
+        free(tokens_backup);
+        fprintf(stderr, "lsh: allocation error\n");
+        exit(EXIT_FAILURE);
+      }
+    }
 
+    token = strtok(NULL, LSH_TOK_DELIM);
+  }
+  tokens[position] = NULL;
+  return tokens;
 }
 
+void lsh_loop(void) {
+  char *line;
+  char **args;
+  int status;
 
-void handleCd(){
+  do {
+    printf("> ");
+    line = lsh_read_line();
+    args = lsh_split_line(line);
+    status = lsh_execute(args);
 
+    free(line);
+    free(args);
+  } while (status);
 }
-/*
 
-else if (length==2)
-	{
-		
-		int pipefd[2];
-		pipe(pipefd);
+int main(int argc, char **argv) {
+  // Run command loop.
+  lsh_loop();
 
-		pid_t p1, p2;
-		p1 = fork();
-		int isChild = p1 == 0;
-		if (isChild){
-
-			close(pipefd[0]);
-			dup2(pipefd[1], STDOUT_FILENO);
-			close(pipefd[1]);
-
-			char *x[] = {"ls", NULL};
-			int status = execvp("ls", x); 
-			if (status <0){
-				perror(pipeArgs[0][0]);
-			} 
-			return;
-		} else {
-			p2 = fork();
-
-			// Child 2 executing..
-			// It only needs to read at the read end
-			if (p2 == 0) {
-				close(pipefd[1]);
-				dup2(pipefd[0], STDIN_FILENO);
-				close(pipefd[0]);
-				char *x[] = {"grep", "s", NULL};
-				if (execvp("grep", x) < 0) {
-					printf("\nCould not execute command 2..");
-					exit(0);
-				}
-			} 
-		} 
-
-		//parent executing, waiting for two children
-		wait(NULL);
-		wait(NULL);
-
-
-	}
-*/
+  return EXIT_SUCCESS;
+}
