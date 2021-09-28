@@ -13,7 +13,6 @@
 //NEED to have:
 //USe PATH variables
 
-
 //Brug PATH variables
 //finjuster og går koden læselig + kommenter resourser osv.
 
@@ -162,50 +161,70 @@ static void exec_pipeline(char *cmds[], size_t pos, int in_fd, int length)
 	if (strcmp(currentCommand, "cd") == 0)
 	{
 		path = getcwd(buffer, sizeof(buffer)); //get the current path
-		dir = strcat(path, "/"); // add a forward slash to the end of the current path
-		nextDir = strcat(dir, args[pos + 1]); //add the directory you want to navigato to
-		chdir(nextDir); // cd into the path builded above
+		dir = strcat(path, "/");			   // add a forward slash to the end of the current path
+		nextDir = strcat(dir, args[pos + 1]);  //add the directory you want to navigato to
+		chdir(nextDir);						   // cd into the path builded above
 	}
 	else
 	{
 
-		if (isLast)
+		if (strcmp(currentCommand, "help") == 0)
 		{
-			if (strcmp(currentCommand, "exit") == 0)
-			{
-				printf("Exiting shell..\n");
-				exit(0);
-			}
+			
+			printf("\nAvailable commands: ls, cd, grep, piping (|).\n\n");
+			printf("\nls prints a list of items in the current directory, ls also accepts arguements");
+			printf("\ne.g ls | grep argument");
 
-			if (fork() == 0)
-			{
-				redirect(in_fd, STDIN_FILENO); /* read from in_fd, write to STDOUT */
-				executeInput(args);
-				exit(0);
-			}
-			else
-			{
-				wait(NULL);
-			}
+			printf("\n\ncd changes directory");
+			printf("\ne.g mkdir abc ENTER");
+			printf("\ncd abc");
+			printf("\nwould return a list with items where the filename contains the grep argument");
+			
+			printf("\n\nPiping is implemented recursively, which means you can chain pipes n times");
+			printf("\ne.g arg1 | arg2 | arg3 | ... | argn\n\n");
 		}
 		else
-		{			   /* $ <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
-			int fd[2]; /* output pipe */
-			if (pipe(fd) < 0)
+		{
+
+			if (isLast)
 			{
-				printf("ERROR");
-			};
-			switch (fork())
-			{
-			case 0:								/* child: execute current command `cmds[pos]` */
-				Close(fd[0]);					/* unused */
-				redirect(in_fd, STDIN_FILENO);	/* read from in_fd */
-				redirect(fd[1], STDOUT_FILENO); /* write to fd[1] */
-				execvp(args[0], args);
-			default:										 /* parent: execute the rest of the commands */
-				Close(fd[1]);								 /* unused */
-				exec_pipeline(cmds, pos + 1, fd[0], length); /* execute the rest */
-				wait(NULL);
+
+				if (strcmp(currentCommand, "exit") == 0)
+				{
+					printf("Exiting shell..\n");
+					exit(0);
+				}
+
+				if (fork() == 0)
+				{
+					redirect(in_fd, STDIN_FILENO); /* read from in_fd, write to STDOUT */
+					executeInput(args);
+					exit(0);
+				}
+				else
+				{
+					wait(NULL);
+				}
+			}
+			else
+			{			   /* $ <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
+				int fd[2]; /* output pipe */
+				if (pipe(fd) < 0)
+				{
+					printf("ERROR");
+				};
+				switch (fork())
+				{
+				case 0:								/* child: execute current command `cmds[pos]` */
+					Close(fd[0]);					/* unused */
+					redirect(in_fd, STDIN_FILENO);	/* read from in_fd */
+					redirect(fd[1], STDOUT_FILENO); /* write to fd[1] */
+					execvp(args[0], args);
+				default:										 /* parent: execute the rest of the commands */
+					Close(fd[1]);								 /* unused */
+					exec_pipeline(cmds, pos + 1, fd[0], length); /* execute the rest */
+					wait(NULL);
+				}
 			}
 		}
 	}
