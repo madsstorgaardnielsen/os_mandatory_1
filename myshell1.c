@@ -41,6 +41,14 @@ void executeInput(char *args[]){
 	wait(&status);
 }
 
+void Close(int FD){
+	int Close_fd = (FD);                                
+    if (close(Close_fd) == -1) {                        
+      perror("close");                                  
+      fprintf(stderr, "couldnt close %d\n",Close_fd);     
+    }    
+} 
+
 
 int main()
 {
@@ -68,7 +76,9 @@ int getInputCommands(char *args[]){
     //Get the command with getline()
     char *line = NULL;//The chars of the line
     size_t len =0;//buffer length
-    getline(&line,&len,stdin);//Reads from stdin
+    if (getline(&line,&len,stdin)==-1){
+		perror("Input error");
+	}
 
         //Get the rest of the tokens into array args  
     char delimit[] = {'|'};
@@ -114,8 +124,12 @@ void prompt(){
 
 /** move oldfd to newfd */
 static void redirect(int oldfd, int newfd) {
-	dup2(oldfd, newfd);
-	close(oldfd);
+	if (dup2(oldfd, newfd)==-1){
+		perror("redirect");                                  
+      	fprintf(stderr, "couldnt redirect %d to %d\n",oldfd, newfd);   
+	};
+	Close(oldfd);
+
 }
 
 /** execute `cmds[pos]` command and call itself for the rest of the commands.
@@ -146,15 +160,14 @@ static void exec_pipeline(char* cmds[], size_t pos, int in_fd, int length) {
 		};
 		switch(fork()) {
 		case 0: /* child: execute current command `cmds[pos]` */
-			close(fd[0]); /* unused */
+			Close(fd[0]); /* unused */
 			redirect(in_fd, STDIN_FILENO);  /* read from in_fd */
 			redirect(fd[1], STDOUT_FILENO); /* write to fd[1] */
 			execvp(args[0], args);
 		default: /* parent: execute the rest of the commands */
-			wait(NULL);
-			close(fd[1]); /* unused */
-			close(in_fd); /* unused */
+			Close(fd[1]); /* unused */
 			exec_pipeline(cmds, pos + 1, fd[0],length); /* execute the rest */
+			wait(NULL);
 		}
 	}
 }
